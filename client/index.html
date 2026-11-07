@@ -1,0 +1,302 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>TOLA CITY ROLEPLAY</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;background:#87ceeb;font-family:Arial}
+#hud{
+ position:absolute;top:10px;left:10px;z-index:5;
+ color:white;background:#101827eF;padding:12px;
+ border-radius:10px;font-size:13px;line-height:1.7
+}
+#controls{
+ position:absolute;bottom:15px;left:0;width:100%;
+ display:flex;justify-content:space-between;
+ padding:0 14px;z-index:5;pointer-events:none
+}
+.group{display:flex;gap:8px;pointer-events:auto}
+button{
+ width:58px;height:58px;border:0;border-radius:12px;
+ background:#142b48dd;color:white;font-size:21px;
+ font-weight:bold;touch-action:none
+}
+#nameBox{
+ position:absolute;z-index:10;top:50%;left:50%;
+ transform:translate(-50%,-50%);
+ background:#101827;padding:20px;border-radius:14px;
+ width:min(90%,320px);color:white
+}
+input{width:100%;padding:12px;border-radius:8px;border:0;margin:8px 0}
+#nameBox button{width:100%;height:43px;font-size:14px}
+#connection{color:#ffd36a}
+</style>
+</head>
+<body>
+
+<div id="hud">
+ <b>TOLA CITY ROLEPLAY</b><br>
+ Pemain: <span id="count">1</span><br>
+ Status: <span id="connection">Menghubungkan...</span><br>
+ Nama: <span id="myName">Pemain</span>
+</div>
+
+<div id="nameBox">
+ <h3>MASUK TOLA CITY</h3>
+ <p>Masukkan nama karakter.</p>
+ <input id="nameInput" maxlength="20" placeholder="Nama karakter">
+ <button id="joinButton">MASUK KOTA</button>
+</div>
+
+<div id="controls">
+ <div class="group">
+  <button id="left">◀</button>
+  <button id="right">▶</button>
+ </div>
+ <div class="group">
+  <button id="back">▼</button>
+  <button id="forward">▲</button>
+ </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script type="module">
+import * as THREE from
+'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+const socket = io();
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9bc9e8);
+scene.fog = new THREE.Fog(0x9bc9e8, 50, 180);
+
+const camera = new THREE.PerspectiveCamera(
+ 65, innerWidth/innerHeight, .1, 500
+);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x667766,2));
+
+const sun = new THREE.DirectionalLight(0xffffff,2);
+sun.position.set(30,50,20);
+scene.add(sun);
+
+function makeBox(parent,x,y,z,w,h,d,color){
+ const obj = new THREE.Mesh(
+  new THREE.BoxGeometry(w,h,d),
+  new THREE.MeshStandardMaterial({color})
+ );
+ obj.position.set(x,y,z);
+ parent.add(obj);
+ return obj;
+}
+
+// Kota
+makeBox(scene,0,-.15,0,200,.2,200,0x57945b);
+makeBox(scene,0,.01,0,12,.08,200,0x34383d);
+makeBox(scene,0,.02,0,200,.08,12,0x34383d);
+
+for(let i=-90;i<100;i+=12){
+ makeBox(scene,0,.07,i,.2,.02,5,0xffffff);
+ makeBox(scene,i,.07,0,5,.02,.2,0xffffff);
+}
+
+for(let x=-70;x<=70;x+=20){
+ for(let z=-70;z<=70;z+=20){
+  if(Math.abs(x)<13 || Math.abs(z)<13)continue;
+  const h=10+Math.random()*18;
+  makeBox(scene,x,h/2,z,10,h,10,0xaab9c7);
+ }
+}
+
+// Karakter
+function createPlayer(color){
+ const group = new THREE.Group();
+
+ makeBox(group,0,1,0,.8,1.2,.45,color);
+
+ const head = new THREE.Mesh(
+  new THREE.SphereGeometry(.3,12,12),
+  new THREE.MeshStandardMaterial({color:0xffc69b})
+ );
+ head.position.y=1.9;
+ group.add(head);
+
+ scene.add(group);
+ return group;
+}
+
+const me = createPlayer(0x1684e5);
+const others = {};
+
+let myName = "Pemain";
+let joined = false;
+
+const keys = {};
+let rotation = 0;
+
+function bind(id,key){
+ const el=document.getElementById(id);
+
+ el.addEventListener("pointerdown",e=>{
+  e.preventDefault();
+  keys[key]=true;
+ });
+
+ ["pointerup","pointercancel","pointerleave"].forEach(ev=>{
+  el.addEventListener(ev,()=>keys[key]=false);
+ });
+}
+
+bind("forward","up");
+bind("back","down");
+bind("left","left");
+bind("right","right");
+
+window.addEventListener("keydown",e=>{
+ keys[e.key.toLowerCase()]=true;
+});
+window.addEventListener("keyup",e=>{
+ keys[e.key.toLowerCase()]=false;
+});
+
+document.getElementById("joinButton").onclick=()=>{
+ if(!socket.connected){
+  alert("Server belum terhubung. Coba lagi setelah server aktif.");
+  return;
+ }
+
+ myName=document.getElementById("nameInput").value.trim() || "Pemain";
+ joined=true;
+
+ socket.emit("setName",myName);
+
+ document.getElementById("myName").textContent=myName;
+ document.getElementById("nameBox").style.display="none";
+};
+
+socket.on("connect",()=>{
+ document.getElementById("connection").textContent="Online";
+});
+
+socket.on("disconnect",()=>{
+ document.getElementById("connection").textContent="Terputus";
+});
+
+function addOther(data){
+ if(!data || data.id===socket.id)return;
+
+ if(!others[data.id]){
+  const avatar=createPlayer(0xe6a23c);
+  others[data.id]=avatar;
+ }
+ updateOther(data);
+}
+
+function updateOther(data){
+ if(!data || data.id===socket.id)return;
+
+ const avatar=others[data.id];
+ if(!avatar)return;
+
+ avatar.position.set(data.x,0,data.z);
+ avatar.rotation.y=data.rotation;
+}
+
+socket.on("currentPlayers",list=>{
+ Object.values(list).forEach(data=>{
+  if(data.id!==socket.id)addOther(data);
+ });
+ updateCount();
+});
+
+socket.on("playerJoined",data=>{
+ addOther(data);
+ updateCount();
+});
+
+socket.on("playerUpdated",data=>{
+ if(data.id!==socket.id)addOther(data);
+});
+
+socket.on("playerMoved",data=>{
+ updateOther(data);
+});
+
+socket.on("playerLeft",id=>{
+ if(others[id]){
+  scene.remove(others[id]);
+  delete others[id];
+ }
+ updateCount();
+});
+
+function updateCount(){
+ document.getElementById("count").textContent=
+  Object.keys(others).length+1;
+}
+
+const clock=new THREE.Clock();
+let sendTimer=0;
+
+function animate(){
+ requestAnimationFrame(animate);
+
+ const dt=Math.min(clock.getDelta(),.04);
+
+ if(joined){
+  const move=new THREE.Vector3();
+
+  if(keys.up||keys.w)move.z-=1;
+  if(keys.down||keys.s)move.z+=1;
+  if(keys.left||keys.a)move.x-=1;
+  if(keys.right||keys.d)move.x+=1;
+
+  if(move.length()>0){
+   move.normalize();
+   me.position.addScaledVector(move,7*dt);
+   rotation=Math.atan2(move.x,move.z);
+   me.rotation.y=rotation;
+  }
+
+  sendTimer+=dt;
+
+  if(sendTimer>.08){
+   sendTimer=0;
+   socket.emit("move",{
+    x:me.position.x,
+    z:me.position.z,
+    rotation
+   });
+  }
+ }
+
+ const desired=new THREE.Vector3(
+  me.position.x-Math.sin(rotation)*7,
+  4,
+  me.position.z-Math.cos(rotation)*7
+ );
+
+ camera.position.lerp(desired,.1);
+ camera.lookAt(me.position.x,1,me.position.z);
+
+ renderer.render(scene,camera);
+}
+
+animate();
+
+addEventListener("resize",()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
